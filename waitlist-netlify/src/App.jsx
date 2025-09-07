@@ -1,19 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Clock, Users, CheckCircle2, Trash2, QrCode } from "lucide-react";
-import { motion } from "framer-motion";
 
-/**
- * 👉 Cómo usar (resumen)
- * - Vista cliente (check-in): https://TU-SITIO
- * - Vista staff (iPad):       https://TU-SITIO/?staff=1  (pide PIN)
- */
-
-// 🔐 Config Firebase
+// --- Firebase config (tuya) ---
 const firebaseConfig = {
   apiKey: "AIzaSyD_mA_6Z5gX0bMITNaEjLC5awY4Z7YC8dM",
   authDomain: "losquinques-cddf9.firebaseapp.com",
@@ -24,14 +11,11 @@ const firebaseConfig = {
   measurementId: "G-3CR7C76BN2",
 };
 
-// 🔑 PIN del staff
 const STAFF_PIN = "3030";
-
-// 🕒 Formato de hora
 const LOCALE = "es-MX";
 const TIMEZONE = "America/Monterrey";
 
-// Firebase
+// --- Firebase SDK ---
 import { initializeApp, getApps } from "firebase/app";
 import {
   getFirestore,
@@ -44,16 +28,68 @@ import {
   deleteDoc,
   query,
   orderBy,
-  limit, // 👈 usamos limit y QUITAMOS where
+  limit,
 } from "firebase/firestore";
 
-function initFirebase() {
-  if (!getApps().length) {
-    initializeApp(firebaseConfig);
-  }
-  return getFirestore();
+// --- Pequeños componentes UI (sin libs externas) ---
+function Card({ className = "", children }) {
+  return (
+    <div className={`bg-white rounded-lg shadow border border-gray-200 ${className}`}>
+      {children}
+    </div>
+  );
+}
+function CardContent({ className = "", children }) {
+  return <div className={`p-4 ${className}`}>{children}</div>;
+}
+function Button({ className = "", children, ...props }) {
+  return (
+    <button
+      className={
+        "px-3 py-2 rounded text-white bg-black hover:opacity-90 disabled:opacity-60 " +
+        className
+      }
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+function Input(props) {
+  return (
+    <input
+      {...props}
+      className={
+        "w-full border rounded px-3 py-2 outline-none focus:ring focus:ring-gray-300 " +
+        (props.className || "")
+      }
+    />
+  );
+}
+function Label({ htmlFor, children }) {
+  return (
+    <label htmlFor={htmlFor} className="block text-sm font-medium text-gray-700">
+      {children}
+    </label>
+  );
+}
+function Checkbox({ checked, onChange, id }) {
+  return (
+    <input
+      id={id}
+      type="checkbox"
+      checked={checked}
+      onChange={(e) => onChange?.(e.target.checked)}
+      className="h-4 w-4"
+    />
+  );
 }
 
+// --- Helpers ---
+function initFirebase() {
+  if (!getApps().length) initializeApp(firebaseConfig);
+  return getFirestore();
+}
 function formatTime(ts) {
   if (!ts) return "";
   try {
@@ -71,35 +107,36 @@ function formatTime(ts) {
 
 export default function WaitlistApp() {
   const db = useMemo(() => initFirebase(), []);
-  const [isStaffMode] = useState(() => new URLSearchParams(window.location.search).get("staff") === "1");
+  const [isStaffMode] = useState(
+    () => new URLSearchParams(window.location.search).get("staff") === "1"
+  );
   const [pinOk, setPinOk] = useState(!isStaffMode);
   const [pinInput, setPinInput] = useState("");
 
-  // Form (cliente)
+  // Cliente (form)
   const [name, setName] = useState("");
   const [people, setPeople] = useState(2);
   const [wantsSms, setWantsSms] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submittedTicket, setSubmittedTicket] = useState(null);
 
-  // Staff state
+  // Staff
   const [loadingList, setLoadingList] = useState(true);
   const [queue, setQueue] = useState([]);
   const unsubRef = useRef(null);
 
-  // 📡 Suscripción a la lista para STAFF (sin where; filtramos en cliente)
+  // Suscripción Firestore para STAFF (sin where; filtramos en cliente)
   useEffect(() => {
     if (isStaffMode && pinOk) {
       const q = query(
         collection(db, "waitlist"),
         orderBy("createdAt", "asc"),
-        limit(200) // suficiente para un turno
+        limit(200)
       );
       const unsub = onSnapshot(q, (snap) => {
         const rows = [];
         snap.forEach((d) => rows.push({ id: d.id, ...d.data() }));
-        const onlyWaiting = rows.filter((r) => r.status === "waiting");
-        setQueue(onlyWaiting);
+        setQueue(rows.filter((r) => r.status === "waiting"));
         setLoadingList(false);
       });
       unsubRef.current = unsub;
@@ -107,11 +144,10 @@ export default function WaitlistApp() {
     }
   }, [db, isStaffMode, pinOk]);
 
-  // ✍️ Envío de check-in (cliente)
+  // Enviar check-in
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!name.trim()) return;
-    if (people < 1) return;
+    if (!name.trim() || people < 1) return;
     setSubmitting(true);
     try {
       const ref = await addDoc(collection(db, "waitlist"), {
@@ -136,13 +172,15 @@ export default function WaitlistApp() {
   // Acciones staff
   async function seatGuest(id) {
     try {
-      await updateDoc(doc(db, "waitlist", id), { status: "seated", seatedAt: serverTimestamp() });
+      await updateDoc(doc(db, "waitlist", id), {
+        status: "seated",
+        seatedAt: serverTimestamp(),
+      });
     } catch (e) {
       console.error(e);
       alert("No se pudo marcar como sentado.");
     }
   }
-
   async function removeGuest(id) {
     try {
       await deleteDoc(doc(db, "waitlist", id));
@@ -151,10 +189,12 @@ export default function WaitlistApp() {
       alert("No se pudo eliminar.");
     }
   }
-
   async function markCalled(id) {
     try {
-      await updateDoc(doc(db, "waitlist", id), { status: "called", calledAt: serverTimestamp() });
+      await updateDoc(doc(db, "waitlist", id), {
+        status: "called",
+        calledAt: serverTimestamp(),
+      });
     } catch (e) {
       console.error(e);
       alert("No se pudo marcar como llamado.");
@@ -168,18 +208,17 @@ export default function WaitlistApp() {
     return queue.reduce((acc, r) => acc + perParty + Math.max(0, r.people - 2), 0);
   }, [queue]);
 
-  // 🔐 Pantalla de PIN para staff
+  // --- Pantalla PIN (staff) ---
   if (isStaffMode && !pinOk) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-50 p-6">
-        <Card className="w-full max-w-sm shadow-lg">
-          <CardContent className="p-6 space-y-4">
-            <div className="flex items-center gap-2">
-              <QrCode className="w-5 h-5" />
-              <h1 className="text-xl font-semibold">Acceso de Staff</h1>
-            </div>
-            <p className="text-sm text-neutral-600">Ingresa el PIN para ver y gestionar la lista de espera.</p>
-            <div className="space-y-2">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
+        <Card className="w-full max-w-sm">
+          <CardContent>
+            <h1 className="text-xl font-semibold mb-2">Acceso de Staff</h1>
+            <p className="text-sm text-gray-600 mb-4">
+              Ingresa el PIN para ver y gestionar la lista de espera.
+            </p>
+            <div className="space-y-2 mb-3">
               <Label htmlFor="pin">PIN</Label>
               <Input
                 id="pin"
@@ -198,8 +237,8 @@ export default function WaitlistApp() {
             <Button className="w-full" onClick={() => setPinOk(pinInput === STAFF_PIN)}>
               Entrar
             </Button>
-            <p className="text-xs text-neutral-500">
-              Tip: añade <span className="font-mono">?staff=1</span> a la URL en el iPad.
+            <p className="text-xs text-gray-500 mt-3">
+              Tip: añade <code>?staff=1</code> a la URL en el iPad.
             </p>
           </CardContent>
         </Card>
@@ -207,59 +246,51 @@ export default function WaitlistApp() {
     );
   }
 
-  // 👩‍🍳 Vista STAFF
+  // --- Vista STAFF ---
   if (isStaffMode && pinOk) {
     return (
-      <div className="min-h-screen bg-neutral-50 p-4 md:p-8">
-        <header className="flex items-center justify-between gap-4 mb-6">
-          <div className="flex items-center gap-3">
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
-              <Users className="w-7 h-7" />
-            </motion.div>
-            <h1 className="text-2xl md:text-3xl font-bold">Lista de espera</h1>
-          </div>
+      <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl md:text-3xl font-bold">Lista de espera</h1>
           <div className="text-right">
-            <p className="text-sm text-neutral-600">En espera</p>
+            <p className="text-sm text-gray-600">En espera</p>
             <p className="text-2xl font-semibold">{queue.length}</p>
           </div>
-        </header>
+        </div>
 
         <div className="grid grid-cols-1 gap-4">
           {loadingList ? (
-            <div className="flex items-center gap-2 text-neutral-600">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Cargando…
-            </div>
+            <Card>
+              <CardContent>Cargando…</CardContent>
+            </Card>
           ) : queue.length === 0 ? (
-            <Card className="shadow-sm">
-              <CardContent className="p-6 text-neutral-600">No hay personas en espera por ahora.</CardContent>
+            <Card>
+              <CardContent>No hay personas en espera por ahora.</CardContent>
             </Card>
           ) : (
             queue.map((r, idx) => (
-              <Card key={r.id} className="shadow-sm">
-                <CardContent className="p-4 md:p-6">
+              <Card key={r.id}>
+                <CardContent>
                   <div className="flex items-center justify-between gap-4">
                     <div className="min-w-0">
                       <div className="flex items-center gap-3">
-                        <span className="text-xl font-semibold truncate">{r.name}</span>
-                        <span className="text-sm px-2 py-0.5 rounded-full bg-neutral-200">
+                        <span className="text-lg font-semibold truncate">{r.name}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200">
                           {r.people} {r.people === 1 ? "persona" : "personas"}
                         </span>
                       </div>
-                      <p className="text-sm text-neutral-600 mt-1 flex items-center gap-1">
-                        <Clock className="w-4 h-4" /> {formatTime(r.createdAt)} • #{idx + 1}
+                      <p className="text-sm text-gray-600 mt-1">
+                        {formatTime(r.createdAt)} • #{idx + 1}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap justify-end">
-                      <Button variant="secondary" onClick={() => markCalled(r.id)}>
+                      <Button onClick={() => markCalled(r.id)} className="bg-gray-700">
                         Llamar
                       </Button>
-                      <Button onClick={() => seatGuest(r.id)} className="gap-2">
-                        <CheckCircle2 className="w-4 h-4" />
+                      <Button onClick={() => seatGuest(r.id)} className="bg-green-600">
                         Pasar a mesa
                       </Button>
-                      <Button variant="destructive" onClick={() => removeGuest(r.id)} className="gap-2">
-                        <Trash2 className="w-4 h-4" />
+                      <Button onClick={() => removeGuest(r.id)} className="bg-red-600">
                         Eliminar
                       </Button>
                     </div>
@@ -270,34 +301,32 @@ export default function WaitlistApp() {
           )}
         </div>
 
-        <footer className="mt-8 flex items-center justify-between text-sm text-neutral-600">
-          <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4" /> Espera aprox.: ~{etaMinutes} min (estimado)
-          </div>
+        <div className="mt-8 flex items-center justify-between text-sm text-gray-600">
+          <div>Espera aprox.: ~{etaMinutes} min (estimado)</div>
           <div>Zona horaria: {TIMEZONE}</div>
-        </footer>
+        </div>
       </div>
     );
   }
 
-  // 👤 Vista CLIENTE
+  // --- Vista CLIENTE ---
   return (
-    <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-6">
-      <Card className="w-full max-w-lg shadow-lg">
-        <CardContent className="p-6 md:p-8">
-          <div className="flex items-center gap-3 mb-4">
-            <Users className="w-6 h-6" />
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+      <Card className="w-full max-w-lg">
+        <CardContent>
+          <div className="mb-4">
             <h1 className="text-2xl font-bold">Lista de espera</h1>
           </div>
           {submittedTicket ? (
             <div className="space-y-3">
-              <p className="text-neutral-700">
+              <p className="text-gray-800">
                 ¡Listo, {submittedTicket.name}! Quedaste en la lista.
               </p>
-              <div className="text-sm text-neutral-600">
-                Grupo: {submittedTicket.people} {submittedTicket.people === 1 ? "persona" : "personas"}
+              <div className="text-sm text-gray-600">
+                Grupo: {submittedTicket.people}{" "}
+                {submittedTicket.people === 1 ? "persona" : "personas"}
               </div>
-              <Button onClick={() => setSubmittedTicket(null)} variant="secondary">
+              <Button onClick={() => setSubmittedTicket(null)} className="bg-gray-700">
                 Apuntar a otra persona
               </Button>
             </div>
@@ -326,22 +355,20 @@ export default function WaitlistApp() {
                   required
                 />
               </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox id="sms" checked={wantsSms} onCheckedChange={(v) => setWantsSms(Boolean(v))} />
-                <Label htmlFor="sms" className="text-sm text-neutral-600">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="sms"
+                  checked={wantsSms}
+                  onChange={(v) => setWantsSms(Boolean(v))}
+                />
+                <Label htmlFor="sms" className="text-sm text-gray-600">
                   Quiero recibir notificación cuando mi mesa esté lista (próximamente)
                 </Label>
               </div>
               <Button type="submit" disabled={submitting} className="w-full">
-                {submitting ? (
-                  <span className="flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Enviando…
-                  </span>
-                ) : (
-                  "Anotarme"
-                )}
+                {submitting ? "Enviando…" : "Anotarme"}
               </Button>
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-gray-500">
                 Tus datos se usan solo para gestionar el turno. Gracias por tu paciencia ✨
               </p>
             </form>
